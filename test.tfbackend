@@ -1,0 +1,4 @@
+key="mrkt.redfin.vm.dev.tfstate"
+container_name="mrkt-redfin-dev-tfstate"
+resource_group_name="rg-my-test-sandbox"
+storage_account_name="mystore2390rhqewc3wec"

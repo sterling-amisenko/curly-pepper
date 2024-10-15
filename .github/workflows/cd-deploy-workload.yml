@@ -1,0 +1,324 @@
+name: cicd-terraform-deploy
+run-name: Deploy ${{ inputs.line_of_business}}-${{ inputs.application_name }}-${{ inputs.environment }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      line_of_business:
+        description: "Line of Business" # needs to be lowercase
+        required: true
+        type: choice
+        options:
+          - "mrkt"
+          - "fin"
+          - "sales"
+          - "ops"
+      application_name:
+        description: "Application Name"
+        required: true
+        type: string
+      environment:
+        description: "Environment"
+        required: true
+        type: string
+      subscription:
+        description: "Target Subscription"
+        required: false
+        type: choice
+        options: # New Repo environments must be added to the choice list below.
+          - "Dev-Test"
+          - "Production"
+
+#Special permissions required for OIDC authentication
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+#These environment variables are used by the terraform azure provider to setup OIDC authenticate.
+env:
+  ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
+  ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+  ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+  BACKEND_FILE_NAME: ${{ github.event.inputs.line_of_business }}.${{ github.event.inputs.application_name }}.${{ github.event.inputs.environment }}.tfbackend
+  CONTAINER_NAME: ${{ github.event.inputs.line_of_business }}-${{ github.event.inputs.application_name }}-${{ github.event.inputs.environment }}-tfstate
+
+jobs:
+  setup-or-config-remote-backend:
+    name: "Configure AzureRM Remote Backend"
+    runs-on: ubuntu-latest
+    # environment: ${{ github.event.inputs.subscription }}
+
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      TF_RESOURCE_GROUP_NAME: ${{ vars.TF_RESOURCE_GROUP_NAME }}
+      TF_STORAGE_ACCOUNT_NAME: ${{ vars.TF_STORAGE_ACCOUNT_NAME }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: "14"
+
+      - name: Set environment variables
+        run: |
+          echo "APPLICATION_NAME=${{ github.event.inputs.application_name }}" >> $GITHUB_ENV
+          echo "ENVIRONMENT=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+          echo "LINE_OF_BUSINESS=${{ github.event.inputs.line_of_business }}" >> $GITHUB_ENV
+          echo "FILE_NAME=${{ github.event.inputs.line_of_business }}.${{ github.event.inputs.application_name }}.vms.${{ github.event.inputs.environment }}.tfbackend" >> $GITHUB_ENV
+
+      - name: Log in to Azure CLI
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create backend file
+        run: |
+          FILE_NAME="${LINE_OF_BUSINESS}.${APPLICATION_NAME}.${ENVIRONMENT}.tfbackend"
+          echo "key=\"${LINE_OF_BUSINESS}.${APPLICATION_NAME}.${ENVIRONMENT}.tfstate\"" > $FILE_NAME
+          echo "container_name=\"${LINE_OF_BUSINESS}-${APPLICATION_NAME}-${ENVIRONMENT}-tfstate\"" >> $FILE_NAME
+          echo "storage_account_name=\"$TF_STORAGE_ACCOUNT_NAME\"" >> $FILE_NAME
+          echo "resource_group_name=\"$TF_RESOURCE_GROUP_NAME\"" >> $FILE_NAME
+
+      - name: Display backend file contents
+        run: |
+          cat ${LINE_OF_BUSINESS}.${APPLICATION_NAME}.${ENVIRONMENT}.tfbackend
+
+      - name: Create Azure storage container
+        run: |
+          STORAGE_ACCOUNT_NAME=${{ env.TF_STORAGE_ACCOUNT_NAME }}
+          CONTAINER_NAME="${LINE_OF_BUSINESS}-${APPLICATION_NAME}-${ENVIRONMENT}-tfstate"
+          AZURE_SUBSCRIPTION_ID=${{ env.AZURE_SUBSCRIPTION_ID }}
+
+          # Check if the storage account exists
+          az storage account show --name $STORAGE_ACCOUNT_NAME --subscription $AZURE_SUBSCRIPTION_ID
+
+          # Check if the container exists
+          if az storage container show --name $CONTAINER_NAME --account-name $STORAGE_ACCOUNT_NAME > /dev/null 2>&1; then
+            echo "Container $CONTAINER_NAME already exists. Job is complete."
+            exit 0
+          else
+            # Create the container if it doesn't exist
+            az storage container create --name $CONTAINER_NAME --account-name $STORAGE_ACCOUNT_NAME
+            echo "Container $CONTAINER_NAME created successfully."
+          fi
+
+      - name: publish partial remote backend config
+        uses: actions/upload-artifact@v4
+        with:
+          name: partial-backend-config
+          path: ${{ github.workspace }}/${{ env.FILE_NAME }}
+
+  terraform-plan:
+    name: "Terraform Plan"
+    runs-on: ubuntu-latest
+    needs: [setup-or-config-remote-backend]
+    env:
+      #this is needed since we are running terraform with read-only permissions
+      ARM_SKIP_PROVIDER_REGISTRATION: true
+    outputs:
+      tfplanExitCode: ${{ steps.tf-plan.outputs.exitcode }}
+
+    steps:
+      # Checkout the repository to the GitHub Actions runner
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Backend Configuration
+        uses: actions/download-artifact@v4
+        with:
+          name: partial-backend-config
+          path: .
+
+      # Sign into Az CLI to interact with the azuread provider during the plan
+      - name: Log in to Azure CLI
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Install the latest version of the Terraform CLI
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
+      - name: Terraform Init
+        run: |
+          terraform init \
+          -backend-config=./${{ env.BACKEND_FILE_NAME }} \
+          -upgrade
+
+      # Checks that all Terraform configuration files adhere to a canonical format
+      # Will fail the build if not
+      - name: Terraform Format
+        run: terraform fmt -check
+
+      # Generates an execution plan for Terraform
+      # An exit code of 0 indicated no changes, 1 a terraform failure, 2 there are pending changes.
+      - name: Terraform Plan
+        id: tf-plan
+        run: |
+          export exitcode=0
+          terraform plan -detailed-exitcode -no-color -out tfplan -var-file inputs.tfvars || export exitcode=$?
+
+          echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
+
+          if [ $exitcode -eq 1 ]; then
+            echo Terraform Plan Failed!
+            exit 1
+          else 
+            exit 0
+          fi
+
+      # Save plan to artifacts
+      - name: Publish Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: tfplan
+
+      # Create string output of Terraform Plan
+      - name: Create String Output
+        id: tf-plan-output
+        run: |
+          TERRAFORM_PLAN=$(terraform show -no-color tfplan)
+
+          delimiter="$(openssl rand -hex 8)"
+          echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
+          echo "## Terraform Plan Output" >> $GITHUB_OUTPUT
+          echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo '```terraform' >> $GITHUB_OUTPUT
+          echo "$TERRAFORM_PLAN" >> $GITHUB_OUTPUT
+          echo '```' >> $GITHUB_OUTPUT
+          echo "</details>" >> $GITHUB_OUTPUT
+          echo "${delimiter}" >> $GITHUB_OUTPUT
+
+      # Publish Terraform Plan as task summary
+      - name: Publish Terraform Plan to Task Summary
+        env:
+          SUMMARY: ${{ steps.tf-plan-output.outputs.summary }}
+        run: |
+          echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+      - name: Create Pull Request
+        id: create-pr
+        if: github.ref != 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { repo, owner } = context.repo;
+            const branch = context.ref.replace('refs/heads/', '');
+            const title = 'Terraform Plan Output';
+            const body = process.env.SUMMARY;
+            const base = 'main';
+
+            // Create the pull request
+            const result = await github.rest.pulls.create({
+              owner,
+              repo,
+              title,
+              body,
+              head: branch,
+              base
+            });
+
+            // Output the pull request number
+            core.setOutput('pr_number', result.data.number);
+
+  terraform-apply:
+    name: "Terraform Apply"
+    if: github.ref == 'refs/heads/main'
+    needs: terraform-plan
+    runs-on: ubuntu-latest
+    # environment: production
+
+    steps:
+      # Checkout the repository to the GitHub Actions runner
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Sign into Az CLI to interact with the azuread provider during the plan
+      - name: Log in to Azure CLI
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download Backend Configuration
+        uses: actions/download-artifact@v4
+        with:
+          name: partial-backend-config
+          path: .
+
+      # Install the latest version of Terraform CLI and configure the Terraform CLI configuration file with a Terraform Cloud user API token
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # Initialize a new or existing Terraform working directory by creating initial files, loading any remote state, downloading modules, etc.
+      - name: Terraform Init
+        run: |
+          terraform init \
+          -backend-config=./${{ env.BACKEND_FILE_NAME }} \
+          -upgrade
+
+      # Download saved plan from artifacts
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+
+      # Terraform Apply
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+
+      - name: Save Terraform Output in TF storage account container
+        id: output
+        run: terraform output -json > tf-output.json
+
+      - name: Upload Terraform Output as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: terraform-output
+          path: tf-output.json
+          retention-days: 1
+
+  upload-to-azure-storage:
+    name: "Upload to Azure Storage"
+    needs: terraform-apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to Azure CLI
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Download Terraform Output
+        uses: actions/download-artifact@v3
+        with:
+          name: terraform-output
+
+      - name: Upload to Azure Blob Storage
+        run: |
+          az storage blob upload \
+            --account-name ${{ vars.TF_STORAGE_ACCOUNT_NAME }} \
+            --container-name ${{ env.CONTAINER_NAME }} \
+            -f ./tf-output.json \
+            --auth-mode login \
+            --overwrite
+
+      - name: Log Upload Result
+        run: |
+          echo "Upload completed. Check the Azure portal to confirm the file was uploaded successfully."
