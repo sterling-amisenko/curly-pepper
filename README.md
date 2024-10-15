@@ -6,7 +6,7 @@ Welcome!
 
 This repo creates VM resources in a target subscription within an existing resource group. These resources provide compute, storage, and networking capabilities that can be utilized by application teams. This repository contains Terraform configurations for deploying a set of Azure resources centered around Virtual Machines. The deployment includes VMs, storage accounts, network interfaces, and associated resources. The pipeline automates the deployment process, ensuring consistent and repeatable infrastructure provisioning.
 
-![VM Resource Pattern v1.0](./imgs/vm-resource-pattern.png)
+![VM Resource Pattern v1.0](./imgs/vm-resource-pattern.svg)
 
 The following resources are deployed:
 
