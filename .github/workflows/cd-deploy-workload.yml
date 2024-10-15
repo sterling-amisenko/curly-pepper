@@ -40,7 +40,7 @@ env:
   ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
   ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
   ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
-  BACKEND_FILE_NAME: ${{ github.event.inputs.line_of_business }}.${{ github.event.inputs.application_name }}.${{ github.event.inputs.environment }}.tfbackend
+  BACKEND_FILE_NAME: ${{ github.event.inputs.line_of_business }}.${{ github.event.inputs.application_name }}.vms.${{ github.event.inputs.environment }}.tfbackend
   CONTAINER_NAME: ${{ github.event.inputs.line_of_business }}-${{ github.event.inputs.application_name }}-${{ github.event.inputs.environment }}-tfstate
 
 jobs:
