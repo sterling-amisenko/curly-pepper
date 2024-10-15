@@ -87,7 +87,7 @@ jobs:
 
       - name: Display backend file contents
         run: |
-          cat ${LINE_OF_BUSINESS}.${APPLICATION_NAME}.${ENVIRONMENT}.tfbackend
+          cat ${LINE_OF_BUSINESS}.${APPLICATION_NAME}.vms.${ENVIRONMENT}.tfbackend
 
       - name: Create Azure storage container
         run: |
