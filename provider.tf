@@ -36,3 +36,13 @@ provider "azurerm" {
     }
   }
 }
+
+provider "azuread" {
+  tenant_id = data.azurerm_client_config.current.tenant_id
+}
+
+provider "azapi" {
+  tenant_id = data.azurerm_client_config.current.tenant_id
+  use_msi   = false
+  use_cli   = true
+}

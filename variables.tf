@@ -50,3 +50,8 @@ variable "vm_configurations" {
     nic_count      = number
   }))
 }
+
+variable "tags" {
+  description = "A map of tags to add to all resources"
+  type        = map(string)
+}

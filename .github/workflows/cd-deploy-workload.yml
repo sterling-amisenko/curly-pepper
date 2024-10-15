@@ -10,7 +10,7 @@ on:
         type: choice
         options:
           - "mrkt"
-          - "fin"
+          - "finops"
           - "sales"
           - "ops"
       application_name:
