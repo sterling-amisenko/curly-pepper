@@ -79,7 +79,7 @@ jobs:
 
       - name: Create backend file
         run: |
-          FILE_NAME="${LINE_OF_BUSINESS}.${APPLICATION_NAME}.${ENVIRONMENT}.tfbackend"
+          FILE_NAME="${LINE_OF_BUSINESS}.${APPLICATION_NAME}.vms.${ENVIRONMENT}.tfbackend"
           echo "key=\"${LINE_OF_BUSINESS}.${APPLICATION_NAME}.${ENVIRONMENT}.tfstate\"" > $FILE_NAME
           echo "container_name=\"${LINE_OF_BUSINESS}-${APPLICATION_NAME}-${ENVIRONMENT}-tfstate\"" >> $FILE_NAME
           echo "storage_account_name=\"$TF_STORAGE_ACCOUNT_NAME\"" >> $FILE_NAME
