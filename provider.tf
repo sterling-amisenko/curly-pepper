@@ -21,7 +21,7 @@ terraform {
       version = "1.14.0"
     }
   }
- backend "azurerm" {
+  backend "azurerm" {
     use_oidc = true # using OIDC with federeated creds from Az Service Principal
   }                 # additional config passed via `-backend-config=` file in the `init` command.
 }
