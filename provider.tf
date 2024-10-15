@@ -21,10 +21,9 @@ terraform {
       version = "1.14.0"
     }
   }
-  # only being used for testing purposes. delete when ready to be used in the Enterprise environment.
-  backend "azurerm" {
-
-  }
+ backend "azurerm" {
+    use_oidc = true # using OIDC with federeated creds from Az Service Principal
+  }                 # additional config passed via `-backend-config=` file in the `init` command.
 }
 
 
