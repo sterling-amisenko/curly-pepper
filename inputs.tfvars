@@ -1,10 +1,10 @@
-application_name       = "blustar"
-assigned_identity_name = "blustar"
-resource_group_name    = "rg-blustar-dev-694"   #  Pull from the outputs.tf from the github enterprise spoke pattern workflow
-virtual_network_name   = "vnet-blustar-dev-694" #  Pull from the outputs.tf from the github enterprise spoke pattern workflow
-key_vault_name         = "kv-blustar-dev-694"   #  Pull from the outputs.tf from the github enterprise spoke pattern workflow
+application_name       = "stream"
+assigned_identity_name = "stream"
+resource_group_name    = "rg-stream-dev-804"   #  Pull from the outputs.tf from the github enterprise spoke pattern workflow
+virtual_network_name   = "vnet-stream-dev-804" #  Pull from the outputs.tf from the github enterprise spoke pattern workflow
+key_vault_name         = "kv-stream-dev-804"   #  Pull from the outputs.tf from the github enterprise spoke pattern workflow
 subnet_name            = "webappsubnet"
-int_slug               = "694" # Pull from the outputs.tf from the github enterprise spoke pattern workflow
+int_slug               = "804" # Pull from the outputs.tf from the github enterprise spoke pattern workflow
 environment            = "dev"
 vm_configurations = {
   vm1 = {
@@ -25,7 +25,7 @@ vm_configurations = {
 
 tags = {
   Environment       = "dev"
-  Description       = "Blue Star Enterprise Resource Manager"
+  Description       = "Stream EHR tool"
   Department        = "Shared Services"
   "Cost Center"     = "13-12-110x"
   "Technical Owner" = "Bob Gilmore"
